@@ -552,18 +552,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.setAttribute('data-theme','dark');
   }
 
-  // Reading controls — panel hidden by default; toggle via icon
+  // Reading controls — panel hidden by default, toggled only by the icon
   applyPrefs();
   $('#readingPanel').hidden = true;
   $('#readingToggle')?.addEventListener('click', toggleReadingPanel);
   $$('.rc-btn[data-size]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.size); }));
   $$('.rc-btn[data-align]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.align); }));
-  // Close panel when tapping outside (but not on the toggle itself — that's handled by toggleReadingPanel)
-  document.addEventListener('click', (e) => {
-    const panel = $('#readingPanel'); if(!panel || panel.hidden) return;
-    if($('#readingControls').contains(e.target)) return;
-    panel.hidden = true;
-  });
 
   // Hide reading controls during scroll; show again when scrolling stops
   let _scrollHideTimer = null;
