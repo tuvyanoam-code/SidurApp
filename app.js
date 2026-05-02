@@ -561,6 +561,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const panel = $('#readingPanel'); if(!panel || panel.hidden) return;
     if(!$('#readingControls').contains(e.target)) panel.hidden = true;
   });
+
+  // Hide reading controls during scroll; show again when scrolling stops
+  let _scrollHideTimer = null;
+  let _lastScrollY = window.scrollY;
+  document.addEventListener('scroll', () => {
+    const ctrl = $('#readingControls'); if(!ctrl) return;
+    const panel = $('#readingPanel');
+    const dy = Math.abs(window.scrollY - _lastScrollY);
+    _lastScrollY = window.scrollY;
+    if(dy > 2){
+      ctrl.classList.add('hidden');
+      if(panel && !panel.hidden) panel.hidden = true;
+    }
+    clearTimeout(_scrollHideTimer);
+    _scrollHideTimer = setTimeout(() => ctrl.classList.remove('hidden'), 600);
+  }, {passive:true});
   document.addEventListener('scroll', () => {
     document.querySelector('.app-header')?.classList.toggle('scrolled', window.scrollY > 4);
   }, {passive:true});
