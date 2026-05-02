@@ -378,6 +378,106 @@ body{
   min-width:20px;text-align:left;
 }
 
+/* ═══════ Parsha index ═══════ */
+.parsha-grid{display:grid;gap:8px;margin:18px 0 24px}
+.parsha-row{
+  display:flex;align-items:center;gap:14px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;
+  font-family:inherit;color:var(--text);text-align:right;cursor:pointer;
+  transition:all .15s var(--ease);
+  position:relative;
+}
+.parsha-row:hover{border-color:var(--accent-2);box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+.parsha-row-name{flex:1;font-size:18px;font-weight:600;color:var(--ink)}
+.parsha-row-book{font-size:13px;color:var(--muted)}
+.parsha-row.is-current{
+  background:linear-gradient(135deg,var(--accent-soft) 0%, var(--accent-softer) 100%);
+  border-color:var(--accent-2);
+}
+.parsha-row.is-current .parsha-row-name{color:var(--accent)}
+.parsha-row-tag{
+  font-size:11px;font-weight:700;letter-spacing:.04em;
+  background:var(--accent);color:#fff;
+  padding:3px 9px;border-radius:999px;
+}
+.verse-num{
+  display:inline-block;font-family:var(--font-ui);font-size:11px;font-weight:600;
+  color:var(--muted-2);background:var(--surface-2);
+  padding:2px 6px;border-radius:6px;margin-inline-end:8px;
+  font-variant-numeric:tabular-nums;
+  vertical-align:middle;
+}
+
+/* ═══════ Search overlay ═══════ */
+.search-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:rgba(11,18,32,.55);backdrop-filter:blur(6px);
+  opacity:0;pointer-events:none;
+  transition:opacity .2s var(--ease);
+  display:flex;flex-direction:column;
+  padding:14px 16px 0;align-items:center;
+}
+[data-theme="dark"] .search-overlay{background:rgba(0,0,0,.65)}
+.search-overlay.open{opacity:1;pointer-events:auto}
+.search-bar{
+  display:flex;align-items:center;gap:10px;
+  width:100%;max-width:560px;
+  background:var(--surface);
+  border-radius:999px;
+  padding:6px 12px 6px 6px;
+  box-shadow:var(--shadow-lg);
+  border:1px solid var(--border);
+}
+.search-input{
+  flex:1;border:none;background:none;outline:none;
+  font:inherit;font-size:16px;color:var(--text);
+  padding:8px 10px;text-align:right;
+  font-family:var(--font-ui);
+}
+.search-input-icon{color:var(--muted)}
+.search-results{
+  width:100%;max-width:560px;
+  background:var(--surface);
+  border-radius:var(--radius-lg);
+  margin-top:14px;
+  padding:6px;
+  max-height:calc(100vh - 110px);overflow:auto;
+  box-shadow:var(--shadow-lg);
+  border:1px solid var(--border);
+}
+.search-empty{
+  text-align:center;color:var(--muted);font-size:14px;padding:32px 16px;
+}
+.search-result{
+  display:block;width:100%;
+  background:none;border:none;padding:14px 16px;
+  text-align:right;cursor:pointer;border-radius:10px;
+  transition:background .12s var(--ease);
+  font-family:inherit;color:var(--text);
+}
+.search-result + .search-result{border-top:1px solid var(--border)}
+.search-result:hover{background:var(--accent-softer)}
+.search-result-tag{
+  display:inline-block;font-size:11px;font-weight:600;color:var(--accent);
+  background:var(--accent-soft);padding:2px 8px;border-radius:999px;
+  margin-bottom:6px;
+}
+.search-result-title{font-size:16.5px;font-weight:600;color:var(--ink);line-height:1.25}
+.search-result-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+.search-result-snippet{
+  font-size:13.5px;color:var(--text-2);margin-top:6px;line-height:1.5;
+  font-family:var(--font-ui);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.search-result-snippet mark{
+  background:#fef3c7;color:#7c4a03;padding:1px 3px;border-radius:3px;
+}
+[data-theme="dark"] .search-result-snippet mark{background:#3a2a05;color:#fbd974}
+
+/* ═══════ Day-block in Song of the Day ═══════ */
+.dow-block{}
+
 /* responsive tweaks */
 @media (min-width:560px){
   body{padding:0 0 120px}
