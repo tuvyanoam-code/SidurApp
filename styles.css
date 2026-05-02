@@ -8,8 +8,8 @@
 
 :root{
   /* Typography */
-  --font-ui:'Heebo','Assistant',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
-  --font-prayer:'Frank Ruhl Libre','Heebo','David',serif;
+  --font-ui:'Assistant',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --font-prayer:'Assistant',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
 
   /* Neutrals */
   --ink:#0b1220;
