@@ -529,6 +529,15 @@ function highlight(text, query){
   return out;
 }
 
+/* ─── Service worker (offline + installable PWA) ─── */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err =>
+      console.warn('sw register failed', err)
+    );
+  });
+}
+
 /* ─── Wire up ─── */
 document.addEventListener('DOMContentLoaded', async () => {
   renderHomeMeta();

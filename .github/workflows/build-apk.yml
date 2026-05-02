@@ -1,0 +1,144 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:    # Allow manual trigger from the Actions tab
+
+permissions:
+  contents: write       # to upload the APK as a release asset
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: Generate signing keystore (deterministic)
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/sidur.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/sidur.keystore \
+              -alias sidur \
+              -storepass ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }} \
+              -keypass ${{ secrets.KEY_PASSWORD || 'sidur-app' }} \
+              -keyalg RSA -keysize 2048 -validity 25000 \
+              -dname "CN=Sidur App, OU=Personal, O=tuvyanoam, L=Jerusalem, ST=Israel, C=IL"
+          fi
+
+      - name: Init Bubblewrap project
+        run: |
+          mkdir -p twa-build && cd twa-build
+          # Non-interactive init using the deployed PWA manifest
+          npx --yes @bubblewrap/cli init --manifest=https://tuvyanoam-code.github.io/SidurApp/manifest.json <<EOF
+          IL
+          tuvyanoam@gmail.com
+          IL
+          $HOME/.android/sidur.keystore
+          sidur
+          ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }}
+          ${{ secrets.KEY_PASSWORD || 'sidur-app' }}
+          EOF
+        continue-on-error: true   # init is interactive; fallback to twa-manifest below
+
+      - name: Write twa-manifest (fallback)
+        run: |
+          cd twa-build
+          cat > twa-manifest.json <<'EOF'
+          {
+            "packageId": "com.tuvyanoam.sidur",
+            "host": "tuvyanoam-code.github.io",
+            "name": "סידור תהילת ה'",
+            "launcherName": "סידור",
+            "display": "standalone",
+            "orientation": "portrait",
+            "themeColor": "#0f4c2e",
+            "navigationColor": "#0f4c2e",
+            "navigationColorDark": "#0f4c2e",
+            "navigationDividerColor": "#0f4c2e",
+            "navigationDividerColorDark": "#0f4c2e",
+            "backgroundColor": "#f5f3ec",
+            "enableNotifications": false,
+            "startUrl": "/SidurApp/",
+            "iconUrl": "https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png",
+            "maskableIconUrl": "https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png",
+            "appVersionName": "1.0.0",
+            "appVersionCode": 1,
+            "shortcuts": [],
+            "generatorApp": "bubblewrap-cli",
+            "webManifestUrl": "https://tuvyanoam-code.github.io/SidurApp/manifest.json",
+            "fallbackType": "customtabs",
+            "features": {},
+            "alphaDependencies": { "enabled": false },
+            "enableSiteSettingsShortcut": true,
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://tuvyanoam-code.github.io/SidurApp/",
+            "minSdkVersion": 21,
+            "orientation": "portrait",
+            "signingKey": {
+              "path": "/home/runner/.android/sidur.keystore",
+              "alias": "sidur"
+            }
+          }
+          EOF
+
+      - name: Build APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'sidur-app' }}
+        run: |
+          cd twa-build
+          # Build using bubblewrap
+          npx --yes @bubblewrap/cli build \
+            --skipPwaValidation \
+            --signingKeyPath="$HOME/.android/sidur.keystore" \
+            --signingKeyAlias=sidur
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidur-app-apk
+          path: |
+            twa-build/app-release-signed.apk
+            twa-build/app-release-bundle.aab
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Create / update GitHub release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: |
+            APK build from commit ${{ github.sha }}.
+            Install on Android: download `app-release-signed.apk`, open it on the phone, allow "install from unknown source" if prompted.
+          files: |
+            twa-build/app-release-signed.apk
+            twa-build/app-release-bundle.aab
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
