@@ -412,7 +412,8 @@ function adjustReadingPref(action){
   localStorage.setItem('sidur-align', p.align);
   applyPrefs();
 }
-function toggleReadingPanel(){
+function toggleReadingPanel(e){
+  if(e){ e.preventDefault(); e.stopPropagation(); }
   const panel = $('#readingPanel');
   panel.hidden = !panel.hidden;
   if(!panel.hidden) applyPrefs();
@@ -551,15 +552,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.setAttribute('data-theme','dark');
   }
 
-  // Reading controls
+  // Reading controls — panel hidden by default; toggle via icon
   applyPrefs();
+  $('#readingPanel').hidden = true;
   $('#readingToggle')?.addEventListener('click', toggleReadingPanel);
-  $$('.rc-btn[data-size]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.size)));
-  $$('.rc-btn[data-align]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.align)));
-  // Close panel when clicking outside
+  $$('.rc-btn[data-size]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.size); }));
+  $$('.rc-btn[data-align]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.align); }));
+  // Close panel when tapping outside (but not on the toggle itself — that's handled by toggleReadingPanel)
   document.addEventListener('click', (e) => {
     const panel = $('#readingPanel'); if(!panel || panel.hidden) return;
-    if(!$('#readingControls').contains(e.target)) panel.hidden = true;
+    if($('#readingControls').contains(e.target)) return;
+    panel.hidden = true;
   });
 
   // Hide reading controls during scroll; show again when scrolling stops
