@@ -96,6 +96,34 @@
   <article class="prayer-body" id="prayerBody">
     <!-- text injected -->
   </article>
+
+  <!-- Reading controls (floating, bottom-left) -->
+  <div class="reading-controls" id="readingControls">
+    <button class="reading-toggle" id="readingToggle" title="הגדרות קריאה">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    </button>
+    <div class="reading-panel" id="readingPanel" hidden>
+      <div class="rc-row">
+        <span class="rc-label">גודל טקסט</span>
+        <div class="rc-buttons">
+          <button class="rc-btn" data-size="-1" title="הקטן"><span style="font-size:13px">א</span></button>
+          <button class="rc-btn" data-size="0" title="ברירת מחדל"><span style="font-size:16px">א</span></button>
+          <button class="rc-btn" data-size="+1" title="הגדל"><span style="font-size:20px">א</span></button>
+        </div>
+      </div>
+      <div class="rc-row">
+        <span class="rc-label">יישור</span>
+        <div class="rc-buttons">
+          <button class="rc-btn" data-align="right" title="ישור לימין">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="18" x2="6" y2="18"/></svg>
+          </button>
+          <button class="rc-btn" data-align="justify" title="ג'סטיפיי">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- TOC bottom sheet -->
@@ -120,8 +148,8 @@
   </div>
 </div>
 
-<script src="parshas.js?v=3"></script>
-<script src="prayers.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="parshas.js?v=4"></script>
+<script src="prayers.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

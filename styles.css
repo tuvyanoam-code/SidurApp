@@ -304,8 +304,8 @@ body{
   box-shadow:var(--shadow);
   border:1px solid var(--border);
   font-family:var(--font-prayer);
-  font-size:20px;line-height:1.85;color:var(--text);
-  text-align:right;
+  font-size:var(--prayer-size, 20px);line-height:1.85;color:var(--text);
+  text-align:var(--prayer-align, right);
   letter-spacing:0;
 }
 .prayer-body h2{
@@ -477,6 +477,45 @@ body{
 
 /* ═══════ Day-block in Song of the Day ═══════ */
 .dow-block{}
+
+/* ═══════ Reading controls (floating) ═══════ */
+.reading-controls{
+  position:fixed;left:14px;bottom:18px;
+  z-index:35;display:flex;flex-direction:column;align-items:flex-start;gap:10px;
+}
+.reading-toggle{
+  width:46px;height:46px;border-radius:50%;
+  background:var(--surface);
+  border:1px solid var(--border);
+  box-shadow:var(--shadow);
+  cursor:pointer;color:var(--text);
+  display:grid;place-items:center;
+  transition:all .15s var(--ease);
+}
+.reading-toggle:hover{border-color:var(--accent-2);color:var(--accent);transform:translateY(-1px)}
+.reading-panel{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:14px;
+  box-shadow:var(--shadow-lg);
+  min-width:230px;
+  display:flex;flex-direction:column;gap:14px;
+  animation:fadeIn .2s var(--ease);
+}
+.rc-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rc-label{font-size:13px;font-weight:500;color:var(--muted)}
+.rc-buttons{display:flex;gap:4px;background:var(--surface-2);padding:3px;border-radius:10px;border:1px solid var(--border)}
+.rc-btn{
+  width:36px;height:32px;border-radius:7px;
+  background:transparent;border:none;cursor:pointer;
+  display:grid;place-items:center;
+  color:var(--text-2);transition:all .12s var(--ease);
+  font-family:var(--font-ui);
+}
+.rc-btn:hover{color:var(--accent);background:var(--accent-softer)}
+.rc-btn.is-active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow-xs)}
+.rc-btn .icon{width:16px;height:16px}
 
 /* responsive tweaks */
 @media (min-width:560px){

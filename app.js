@@ -181,52 +181,38 @@ function chooseNowPrayer(zm, dayInfo){
   return { id:'shacharit', reason:'תפילת היום' };
 }
 
-/* ─── Day-context filter for prayer body ─── */
+/* ─── Day-context filter logic (shared by body + TOC) ─── */
+function shouldShowSection(ctx, dayInfo){
+  if(!ctx) return true;
+  switch(ctx.kind){
+    case 'shir-shel-yom':       return ctx.dow === dayInfo.dow;
+    case 'tachanun':             return !dayInfo.noTachanun;
+    case 'avinu-malkenu':        return dayInfo.isFastDay || (!dayInfo.noTachanun && (dayInfo.dow === 1 || dayInfo.dow === 4));
+    case 'mon-thu-only':         return (dayInfo.dow === 1 || dayInfo.dow === 4) && !dayInfo.noTachanun;
+    case 'rosh-chodesh-only':    return dayInfo.isRoshChodesh;
+    case 'elul-tishrei':         return dayInfo.hebMonth === 'Elul' || dayInfo.hebMonth === 'Tishrei';
+    case 'fast-day-only':        return dayInfo.isFastDay;
+    case 'bahab-only':           return false;
+    default: return true;
+  }
+}
 function filterBodyForToday(prayer, dayInfo){
-  // Build the body HTML by concatenating sections, applying contextual hide rules.
   const parts = [];
   for(const sec of (prayer.sections||[])){
     const html = prayer.sectionHtml?.[sec.id];
     if(!html) continue;
-    const ctx = sec.context;
-    if(ctx){
-      // shir-shel-yom: only today's day-of-week section
-      if(ctx.kind === 'shir-shel-yom' && ctx.dow !== dayInfo.dow) continue;
-      // tachanun: skip on no-tachanun days
-      if(ctx.kind === 'tachanun' && dayInfo.noTachanun) continue;
-      // Avinu Malkenu: only on fast days, 10 days of teshuva — for now skip on shabbat / no-tachanun
-      if(ctx.kind === 'avinu-malkenu' && dayInfo.noTachanun && !dayInfo.isFastDay) continue;
-      // Mon/Thu only
-      if(ctx.kind === 'mon-thu-only' && !(dayInfo.dow === 1 || dayInfo.dow === 4)) continue;
-      if(ctx.kind === 'mon-thu-only' && dayInfo.noTachanun) continue;
-      // BaHaB only
-      if(ctx.kind === 'bahab-only') continue;   // rarely applies; keep off by default
-      // Elul / Tishrei
-      if(ctx.kind === 'elul-tishrei' && !(dayInfo.hebMonth === 'Elul' || dayInfo.hebMonth === 'Tishrei')) continue;
-    }
+    if(!shouldShowSection(sec.context, dayInfo)) continue;
     parts.push(html);
   }
-  // For Song of the Day: when shown, also strip non-today day-blocks within it
   let body = parts.join('\n');
+  // For Song of the Day: strip non-today day-blocks
   body = body.replace(/<div class="dow-block" data-dow="(\d)"[^>]*>([\s\S]*?)<\/div>/g, (m, d, inner) => {
     return (parseInt(d) === dayInfo.dow) ? inner : '';
   });
   return body;
 }
-
-/* ─── Sections-list filter (TOC) for current day ─── */
 function filteredSections(prayer, dayInfo){
-  return (prayer.sections||[]).filter(sec => {
-    const ctx = sec.context; if(!ctx) return true;
-    if(ctx.kind === 'shir-shel-yom') return ctx.dow === dayInfo.dow;
-    if(ctx.kind === 'tachanun' && dayInfo.noTachanun) return false;
-    if(ctx.kind === 'avinu-malkenu' && dayInfo.noTachanun && !dayInfo.isFastDay) return false;
-    if(ctx.kind === 'mon-thu-only' && !(dayInfo.dow === 1 || dayInfo.dow === 4)) return false;
-    if(ctx.kind === 'mon-thu-only' && dayInfo.noTachanun) return false;
-    if(ctx.kind === 'bahab-only') return false;
-    if(ctx.kind === 'elul-tishrei' && !(dayInfo.hebMonth === 'Elul' || dayInfo.hebMonth === 'Tishrei')) return false;
-    return true;
-  });
+  return (prayer.sections||[]).filter(sec => shouldShowSection(sec.context, dayInfo));
 }
 
 /* ─── Render: zmanim + home meta ─── */
@@ -397,6 +383,41 @@ async function loadParsha(ref, heName){
 function openSheet(){ $('#tocSheet').classList.add('open'); $('#sheetMask').classList.add('open'); $('#tocSheet').setAttribute('aria-hidden','false'); }
 function closeSheet(){ $('#tocSheet').classList.remove('open'); $('#sheetMask').classList.remove('open'); $('#tocSheet').setAttribute('aria-hidden','true'); }
 
+/* ─── Reading preferences (font size + alignment) ─── */
+const READING_SIZES = [16, 18, 20, 22, 25, 28, 32];   // px steps
+function loadPrefs(){
+  return {
+    sizeIdx: parseInt(localStorage.getItem('sidur-size-idx') ?? '2'),
+    align: localStorage.getItem('sidur-align') ?? 'right',
+  };
+}
+function applyPrefs(){
+  const p = loadPrefs();
+  const size = READING_SIZES[Math.max(0, Math.min(READING_SIZES.length-1, p.sizeIdx))];
+  document.documentElement.style.setProperty('--prayer-size', size + 'px');
+  document.documentElement.style.setProperty('--prayer-align', p.align);
+  $$('.rc-btn[data-size]').forEach(b => b.classList.remove('is-active'));
+  // Mark "default" (idx=2) when at default; otherwise mark relative
+  const sizeBtn = (p.sizeIdx > 2) ? '+1' : (p.sizeIdx < 2) ? '-1' : '0';
+  $$('.rc-btn[data-size="' + sizeBtn + '"]').forEach(b => b.classList.add('is-active'));
+  $$('.rc-btn[data-align]').forEach(b => b.classList.toggle('is-active', b.dataset.align === p.align));
+}
+function adjustReadingPref(action){
+  const p = loadPrefs();
+  if(action === '+1') p.sizeIdx = Math.min(READING_SIZES.length-1, p.sizeIdx + 1);
+  else if(action === '-1') p.sizeIdx = Math.max(0, p.sizeIdx - 1);
+  else if(action === '0') p.sizeIdx = 2;
+  else if(action === 'right' || action === 'justify') p.align = action;
+  localStorage.setItem('sidur-size-idx', String(p.sizeIdx));
+  localStorage.setItem('sidur-align', p.align);
+  applyPrefs();
+}
+function toggleReadingPanel(){
+  const panel = $('#readingPanel');
+  panel.hidden = !panel.hidden;
+  if(!panel.hidden) applyPrefs();
+}
+
 /* ─── Search ─── */
 let SEARCH_INDEX = null;
 function buildSearchIndex(){
@@ -529,6 +550,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(localStorage.getItem('sidur-theme') === 'dark'){
     document.documentElement.setAttribute('data-theme','dark');
   }
+
+  // Reading controls
+  applyPrefs();
+  $('#readingToggle')?.addEventListener('click', toggleReadingPanel);
+  $$('.rc-btn[data-size]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.size)));
+  $$('.rc-btn[data-align]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.align)));
+  // Close panel when clicking outside
+  document.addEventListener('click', (e) => {
+    const panel = $('#readingPanel'); if(!panel || panel.hidden) return;
+    if(!$('#readingControls').contains(e.target)) panel.hidden = true;
+  });
   document.addEventListener('scroll', () => {
     document.querySelector('.app-header')?.classList.toggle('scrolled', window.scrollY > 4);
   }, {passive:true});
