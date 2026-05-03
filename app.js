@@ -70,7 +70,7 @@ function classifyDay(holidays, hd){
   let isShabbat = false, isYomtov = false, isCholHamoed = false;
   let isRoshChodesh = false, isChanukah = false, isPurim = false;
   let isFastDay = false, isLagBaomer = false, isTuBshvat = false;
-  let isErevYomTov = false;
+  let isErevYomTov = false, isTishaBav = false;
   const tags = [];
   for(const ev of items){
     if(ev.category === 'parashat'){ parsha = ev.hebrew || ev.title; }
@@ -83,11 +83,13 @@ function classifyDay(holidays, hd){
     if(/Lag B'?Omer|ל"?ג בעומר/.test(t)) isLagBaomer = true;
     if(/Tu B'?Shvat|ט"ו בשבט|טו בשבט/.test(t)) isTuBshvat = true;
     if(/Tzom|Fast|Tisha|Tzom Gedaliah|Asarah|Shiva Asar|תענית|צום/i.test(t) && !/Esther/.test(t)) isFastDay = true;
+    if(/Tisha B'?Av|ט"?\s*באב/i.test(t)) isTishaBav = true;
     if(/Erev/i.test(t)) isErevYomTov = true;
     tags.push(t);
   }
   const now = new Date();
   const dow = now.getDay();
+  const hh = now.getHours() + now.getMinutes()/60;
   // Friday after candle-lighting → already in Shabbat zone
   if(dow === 6) isShabbat = true;
   if(dow === 5 && now.getHours() >= 17) isShabbat = true;
@@ -105,12 +107,41 @@ function classifyDay(holidays, hd){
   // Heuristic: ניסן (after seder) — Hebcal's converter gives hd.hm
   if(hd && (hd.hm === 'Nisan')) noTachanun = true;
   // ערב שבת after mincha — handled by isShabbat at 17:00+
+
+  /* Date-driven liturgical flags */
+  const hd_d = hd?.hd;
+  const hd_m = hd?.hm;
+  const winterPrayerMonths = new Set(['Cheshvan','Kislev','Tevet',"Sh'vat",'Shvat','Adar','Adar I','Adar II','Adar 1','Adar 2']);
+  // Aseret Yemei Teshuva: Tishrei 1–10 (Rosh Hashana through Yom Kippur)
+  const isAseretYemeiTeshuva = (hd_m === 'Tishrei' && hd_d != null && hd_d >= 1 && hd_d <= 10);
+  // Mashiv HaRuach U'Morid HaGeshem: from Mussaf of Shemini Atzeret (Tishrei 22) through Mussaf of Pesach (Nisan 15)
+  let isMoridHaGeshem = false;
+  if(hd_m === 'Tishrei' && hd_d != null && hd_d >= 22) isMoridHaGeshem = true;
+  else if(winterPrayerMonths.has(hd_m)) isMoridHaGeshem = true;
+  else if(hd_m === 'Nisan' && hd_d != null && hd_d <= 14) isMoridHaGeshem = true;
+  // Tal U'Matar Livracha: Israel — Cheshvan 7 through Nisan 14
+  let isTalUMatar = false;
+  if(hd_m === 'Cheshvan' && hd_d != null && hd_d >= 7) isTalUMatar = true;
+  else if(['Kislev','Tevet',"Sh'vat",'Shvat','Adar','Adar I','Adar II','Adar 1','Adar 2'].includes(hd_m)) isTalUMatar = true;
+  else if(hd_m === 'Nisan' && hd_d != null && hd_d <= 14) isTalUMatar = true;
+  const isYaaleVeyavo = isRoshChodesh || isCholHamoed || isYomtov;
+  const isAlHanissim = isChanukah || isPurim;
+  // L'David HaShem Ori: Rosh Chodesh Elul through Hoshana Rabba (Tishrei 21)
+  const isElulToHRabba = (hd_m === 'Elul') || (hd_m === 'Tishrei' && hd_d != null && hd_d <= 21);
+  // Motzaei Shabbat / Yom Tov heuristic: Sat after sunset OR Sun before alot
+  const isMotzaeiShabbat = (dow === 6 && hh >= 18) || (dow === 0 && hh < 5);
+  // Tisha B'Av Mincha: only on 9 Av (or 10 Av if 9 Av is Shabbat) during the afternoon
+  const isTishaBavMincha = isTishaBav && hh >= 12;
+
   return {
     kind, pillClass, parsha,
     isShabbat, isYomtov, isCholHamoed, isRoshChodesh,
     isChanukah, isPurim, isLagBaomer, isTuBshvat, isFastDay, isErevYomTov,
     noTachanun, dow,
-    hebMonth: hd?.hm,
+    hebMonth: hd?.hm, hebDay: hd?.hd,
+    isAseretYemeiTeshuva, isMoridHaGeshem, isTalUMatar,
+    isYaaleVeyavo, isAlHanissim, isElulToHRabba,
+    isMotzaeiShabbat, isTishaBav, isTishaBavMincha,
   };
 }
 
@@ -196,6 +227,146 @@ function shouldShowSection(ctx, dayInfo){
     default: return true;
   }
 }
+
+/* ─── Conditional-paragraph labels (longest first to avoid mis-match) ─── */
+const VARIANT_LABELS = [
+  ['בתענית ציבור ובעשי״ת',     d => d.isFastDay || d.isAseretYemeiTeshuva],
+  ['בתענית ציבור ובעשי"ת',     d => d.isFastDay || d.isAseretYemeiTeshuva],
+  ['בראש חודש ובחול המועד',    d => d.isYaaleVeyavo],
+  ['בראש חודש ובחוה״מ',         d => d.isYaaleVeyavo],
+  ['מר״ח אלול עד הושענא רבא',   d => d.isElulToHRabba],
+  ['מר"ח אלול עד הושענא רבא',   d => d.isElulToHRabba],
+  ['במוצאי שבת ויום טוב',       d => d.isMotzaeiShabbat],
+  ['במנחת תשעה באב',            d => d.isTishaBavMincha],
+  ['בחנוכה ופורים',             d => d.isAlHanissim],
+  ['בתענית ציבור',              d => d.isFastDay],
+  ['בתענית צבור',               d => d.isFastDay],
+  ['לחנוכה',                    d => d.isChanukah],
+  ['לפורים',                    d => d.isPurim],
+  ['בעשי״ת',                    d => d.isAseretYemeiTeshuva],
+  ['בעשי"ת',                    d => d.isAseretYemeiTeshuva],
+  ['בקיץ',                       d => !d.isMoridHaGeshem],
+  ['בחורף',                      d => d.isMoridHaGeshem],
+];
+const DOW_LABELS = {
+  'בראשון בשבת': 0,
+  'בשני בשבת': 1,
+  'בשלישי בשבת': 2,
+  'ברביעי בשבת': 3,
+  'בחמישי בשבת': 4,
+  'בשישי בשבת': 5,
+};
+
+function _stripTagsLeading(s, n){
+  return s.slice(0, n).replace(/<[^>]+>/g, ' ').replace(/\s+/g,' ').trim();
+}
+function _findParagraphLabel(inner){
+  const lead = _stripTagsLeading(inner, 280);
+  for(const [label, condFn] of VARIANT_LABELS){
+    if(lead.startsWith(label)) return { label, condFn };
+  }
+  return null;
+}
+
+/* ─── Shir Shel Yom: keep only today's day block ─── */
+function filterShirShelYom(html, dayInfo){
+  // Locate each day-marker paragraph
+  const labels = Object.keys(DOW_LABELS);
+  const labelEsc = labels.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const markerRe = new RegExp(`<p[^>]*>\\s*<small>\\s*(${labelEsc.join('|')}):?\\s*<\\/small>`, 'g');
+  const matches = [];
+  let m;
+  while((m = markerRe.exec(html)) !== null){
+    matches.push({ start: m.index, dow: DOW_LABELS[m[1]] });
+  }
+  if(matches.length === 0) return html;
+
+  // Determine where the day-block region ends:
+  // first occurrence (after the first day marker) of "קדיש יתום" rubric or the Mr"ch Elul rubric.
+  const endRes = [
+    /<p class="rubric">\s*קדיש יתום\.?\s*<\/p>/,
+    /<p class="rubric">\s*מר[״"]ח אלול/
+  ];
+  let endPos = html.length;
+  for(const re of endRes){
+    const mm = re.exec(html);
+    if(mm && mm.index >= matches[0].start) endPos = Math.min(endPos, mm.index);
+  }
+
+  const blockStart = matches[0].start;
+  const todayMatch = matches.find(mt => mt.dow === dayInfo.dow);
+  if(!todayMatch){
+    // Today isn't in the weekday list (Shabbat) — drop the whole region
+    return html.slice(0, blockStart) + html.slice(endPos);
+  }
+  const idx = matches.indexOf(todayMatch);
+  const todayEnd = (idx + 1 < matches.length) ? matches[idx + 1].start : endPos;
+  const todayBlock = html.slice(todayMatch.start, todayEnd);
+  return html.slice(0, blockStart) + todayBlock + html.slice(endPos);
+}
+
+/* ─── HTML-level filter applied AFTER section-level filter ─── */
+function applyDayFilters(html, dayInfo){
+  // (1) Shir Shel Yom days
+  html = filterShirShelYom(html, dayInfo);
+
+  // (2) Multi-paragraph blocks — handle BEFORE the per-paragraph filter
+
+  // (2a) Mr"ch Elul: rubric paragraph immediately followed by L'David psalm paragraph
+  if(!dayInfo.isElulToHRabba){
+    html = html.replace(
+      /<p class="rubric">\s*מר[״"]ח אלול[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?לְדָוִד[\s\S]*?<\/p>/g, ''
+    );
+  }
+
+  // (2b) Avinu Malkenu inside Tachanun: rubric+text + 0–2 follow-on Avinu Malkenu paragraphs
+  if(!(dayInfo.isFastDay || dayInfo.isAseretYemeiTeshuva)){
+    html = html.replace(
+      /<p class="rubric">\s*בתענית ציבור ובעשי[״"]ת אומרים כאן אבינו מלכנו[\s\S]*?<\/p>(?:\s*<p[^>]*>[\s\S]*?אָבִינוּ מַלְכֵּ[\s\S]*?<\/p>)*/g, ''
+    );
+  }
+
+  // (2c) Mon/Thu Selichot block in Tachanun
+  if(!(dayInfo.dow === 1 || dayInfo.dow === 4) || dayInfo.noTachanun){
+    html = html.replace(
+      /<p>\s*<b>\s*לשני וחמישי\s*<\/b>\s*<\/p>[\s\S]*?ע״כ מה שמוסיפין בשני ובחמישי[\s\S]*?<\/p>/g, ''
+    );
+  } else {
+    // On Mon/Thu — strip the explanatory header and the trailing "ע״כ ..." marker
+    html = html.replace(/<p>\s*<b>\s*לשני וחמישי\s*<\/b>\s*<\/p>\s*/g, '');
+    html = html.replace(/\s*<small>\s*ע״כ מה שמוסיפין בשני ובחמישי[^<]*<\/small>/g, '');
+    html = html.replace(/\s*ע״כ מה שמוסיפין בשני ובחמישי[^<]*/g, '');
+  }
+
+  // (3) Per-paragraph filter for standalone variant <p>'s
+  html = html.replace(/<p\b[^>]*>([\s\S]*?)<\/p>/g, (full, inner) => {
+    const m = _findParagraphLabel(inner);
+    if(!m) return full;
+    return m.condFn(dayInfo) ? full : '';
+  });
+
+  // (4) Inline variants within paragraphs we kept
+
+  // (4a) Mashiv HaRuach / Morid HaTal — same paragraph carries both variants
+  html = html.replace(
+    /<p>\s*<small>\s*בקיץ\s*<\/small>\s*([^<:]+:)\s*<small>\s*בחורף\s*<\/small>\s*([^<:]+:)\s*<\/p>/g,
+    (m, summer, winter) => `<p>${(dayInfo.isMoridHaGeshem ? winter : summer).trim()}</p>`
+  );
+
+  // (4b) Tal U'Matar inline in Birkat HaShanim
+  html = html.replace(
+    /וְתֵן\s*<small>\s*בקיץ\s*<\/small>\s*בְּרָכָה\s*\(\s*<small>\s*בחורף\s*<\/small>\s*טַל וּמָטָר לִבְרָכָה\s*\)/g,
+    dayInfo.isTalUMatar ? 'וְתֵן טַל וּמָטָר לִבְרָכָה' : 'וְתֵן בְּרָכָה'
+  );
+
+  // (4c) Aseret Yemei Teshuva — inline parenthesized variants
+  if(!dayInfo.isAseretYemeiTeshuva){
+    html = html.replace(/\s*\(\s*<small>\s*בעשי[״"]ת\s*<\/small>[^)]*\)/g, '');
+  }
+
+  return html;
+}
+
 function filterBodyForToday(prayer, dayInfo){
   const parts = [];
   for(const sec of (prayer.sections||[])){
@@ -205,10 +376,12 @@ function filterBodyForToday(prayer, dayInfo){
     parts.push(html);
   }
   let body = parts.join('\n');
-  // For Song of the Day: strip non-today day-blocks
+  // Legacy day-block markup (kept for compatibility)
   body = body.replace(/<div class="dow-block" data-dow="(\d)"[^>]*>([\s\S]*?)<\/div>/g, (m, d, inner) => {
     return (parseInt(d) === dayInfo.dow) ? inner : '';
   });
+  // Day-aware HTML filtering
+  body = applyDayFilters(body, dayInfo);
   return body;
 }
 function filteredSections(prayer, dayInfo){
@@ -318,27 +491,38 @@ function backHome(){
   $('#screen-settings')?.classList.remove('active');
   $('#screen-home').classList.add('active');
   closeSheet();
-  if(_railObserver){ _railObserver.disconnect(); _railObserver = null; }
+  if(_railScrollHandler){ window.removeEventListener('scroll', _railScrollHandler); _railScrollHandler = null; }
+  if(_railResizeHandler){ window.removeEventListener('resize', _railResizeHandler); _railResizeHandler = null; }
 }
 
-/* ─── Progress rail (thin, elegant) ─── */
-let _railObserver = null;
+/* ─── Progress rail (scroll-driven, pulses on section crossing) ─── */
 let _railSectionMap = null;       // id → { dot, title, idx }
 let _railSectionOrder = [];
+let _railSectionPositions = [];   // [{id, top}] in document coords
+let _railDots = [];
 let _railFillEl = null, _railTrackEl = null, _railEl = null, _railBubbleEl = null;
 let _railHideBubbleTimer = null;
 let _railCurrentIdx = -1;
+let _railScrollHandler = null;
+let _railResizeHandler = null;
+let _railRaf = null;
 
 function buildProgressRail(sections){
   _railEl    = $('#progressRail');
   _railTrackEl = $('#railTrack');
   _railFillEl  = $('#railFill');
   if(!_railEl || !_railTrackEl || !_railFillEl) return;
+  // Detach previous handlers
+  if(_railScrollHandler){ window.removeEventListener('scroll', _railScrollHandler); _railScrollHandler = null; }
+  if(_railResizeHandler){ window.removeEventListener('resize', _railResizeHandler); _railResizeHandler = null; }
+
   if(!sections || sections.length === 0){
     _railEl.style.display = 'none';
     _railTrackEl.innerHTML = '';
     _railFillEl.style.width = '0';
     if(_railBubbleEl) _railBubbleEl.classList.remove('show');
+    _railSectionPositions = [];
+    _railDots = [];
     return;
   }
   _railEl.style.display = 'block';
@@ -361,52 +545,101 @@ function buildProgressRail(sections){
   _railBubbleEl = bubble;
   bubble.classList.remove('show');
 
-  $$('#railTrack .rail-dot').forEach(dot => {
+  _railDots = $$('#railTrack .rail-dot');
+  _railDots.forEach(dot => {
     _railSectionMap[dot.dataset.anchor] = { dot, title: dot.dataset.title, idx: parseInt(dot.dataset.idx) };
     dot.addEventListener('click', (e) => { e.stopPropagation(); showRailBubble(dot); });
   });
-  // Tap on track itself (not on a dot) → hide bubble
   _railTrackEl.addEventListener('click', () => hideRailBubble());
 
-  // Auto-progress observer
-  if(_railObserver) _railObserver.disconnect();
-  _railObserver = new IntersectionObserver(onRailIntersect, {
-    rootMargin: '-30% 0px -55% 0px',
-    threshold: 0,
-  });
-  for(const s of sections){
-    const el = document.getElementById(s.id);
-    if(el) _railObserver.observe(el);
-  }
   _railCurrentIdx = -1;
+
+  // Measure section tops once layout settles (font load may shift things)
+  setTimeout(measureRailSectionPositions, 60);
+  setTimeout(measureRailSectionPositions, 400);
+
+  _railScrollHandler = () => {
+    if(_railRaf) return;
+    _railRaf = requestAnimationFrame(() => {
+      _railRaf = null;
+      updateRailProgress();
+    });
+  };
+  _railResizeHandler = () => {
+    measureRailSectionPositions();
+    updateRailProgress();
+  };
+  window.addEventListener('scroll', _railScrollHandler, {passive:true});
+  window.addEventListener('resize', _railResizeHandler, {passive:true});
+  updateRailProgress();
 }
 
-function onRailIntersect(entries){
-  for(const ent of entries){
-    if(!ent.isIntersecting) continue;
-    const id = ent.target.id;
-    const info = _railSectionMap?.[id]; if(!info) continue;
-    setRailCurrent(info.idx);
-  }
-}
-
-function setRailCurrent(idx){
-  if(idx === _railCurrentIdx) return;
-  _railCurrentIdx = idx;
-  $$('#railTrack .rail-dot').forEach((dot, i) => {
-    dot.classList.toggle('is-done',    i < idx);
-    dot.classList.toggle('is-current', i === idx);
+function measureRailSectionPositions(){
+  _railSectionPositions = _railSectionOrder.map(id => {
+    const el = document.getElementById(id);
+    return { id, top: el ? (el.getBoundingClientRect().top + window.scrollY) : 0 };
   });
-  // Fill from right (start) up to the current dot.
-  // The track flexes left-right with space-between; dots are at left:offset-x from container.
-  if(idx < 0){ _railFillEl.style.width = '0'; return; }
+}
+
+function updateRailProgress(){
+  if(!_railFillEl || !_railTrackEl || _railSectionPositions.length === 0) return;
+  // Sticky offset: app header (~52px) + rail itself (~30px) + small breathing room
+  const headerOffset = 96;
+  const refY = window.scrollY + headerOffset;
+
+  // Find the highest-indexed section that started above our reference line
+  let curIdx = -1;
+  for(let i = 0; i < _railSectionPositions.length; i++){
+    if(_railSectionPositions[i].top <= refY) curIdx = i;
+  }
+
+  // Fractional progress within the current section (towards next section)
+  let frac = 0;
+  if(curIdx >= 0 && curIdx + 1 < _railSectionPositions.length){
+    const segStart = _railSectionPositions[curIdx].top;
+    const segEnd   = _railSectionPositions[curIdx + 1].top;
+    if(segEnd > segStart) frac = Math.max(0, Math.min(1, (refY - segStart) / (segEnd - segStart)));
+  } else if(curIdx === _railSectionPositions.length - 1){
+    const segStart = _railSectionPositions[curIdx].top;
+    const docEnd   = (document.documentElement.scrollHeight - window.innerHeight) + headerOffset;
+    if(docEnd > segStart) frac = Math.max(0, Math.min(1, (refY - segStart) / (docEnd - segStart)));
+  }
+
+  // Compute fill width from the right edge of the track
   const trackRect = _railTrackEl.getBoundingClientRect();
-  const dot = _railTrackEl.querySelector(`.rail-dot[data-idx="${idx}"]`);
-  if(!dot) return;
-  const dotRect = dot.getBoundingClientRect();
-  // RTL: "start" is the right edge → fill from right to dot's center
-  const widthPx = (trackRect.right - (dotRect.left + dotRect.width/2));
-  _railFillEl.style.width = Math.max(0, Math.min(trackRect.width, widthPx)) + 'px';
+  let fillWidth = 0;
+  if(curIdx >= 0 && _railDots[curIdx]){
+    const dotRect = _railDots[curIdx].getBoundingClientRect();
+    const dotCenterX = dotRect.left + dotRect.width / 2;
+    const baseWidth = trackRect.right - dotCenterX;
+    let segPx = 0;
+    if(curIdx + 1 < _railDots.length && _railDots[curIdx + 1]){
+      const nextRect = _railDots[curIdx + 1].getBoundingClientRect();
+      const nextCenterX = nextRect.left + nextRect.width / 2;
+      segPx = dotCenterX - nextCenterX; // RTL: next is to the LEFT
+    }
+    fillWidth = baseWidth + segPx * frac;
+  }
+  _railFillEl.style.width = Math.max(0, Math.min(trackRect.width, fillWidth)) + 'px';
+
+  // Detect transition + pulse newly reached dot
+  if(curIdx !== _railCurrentIdx){
+    const prevIdx = _railCurrentIdx;
+    _railCurrentIdx = curIdx;
+    _railDots.forEach((dot, i) => {
+      dot.classList.toggle('is-done',    i < curIdx);
+      dot.classList.toggle('is-current', i === curIdx);
+    });
+    if(curIdx > prevIdx && curIdx >= 0){
+      const reached = _railDots[curIdx];
+      if(reached){
+        reached.classList.remove('rail-dot-pulse');
+        void reached.offsetWidth; // restart animation
+        reached.classList.add('rail-dot-pulse');
+        setTimeout(() => reached.classList.remove('rail-dot-pulse'), 700);
+      }
+    }
+  }
 }
 
 function showRailBubble(dot){
