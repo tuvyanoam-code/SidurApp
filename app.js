@@ -321,38 +321,54 @@ function backHome(){
   if(_railObserver){ _railObserver.disconnect(); _railObserver = null; }
 }
 
-/* ─── Progress rail ─── */
+/* ─── Progress rail (thin, elegant) ─── */
 let _railObserver = null;
-let _railSectionMap = null;          // sectionId → dot element
-let _railSectionOrder = [];          // [sectionId, ...] in document order
-let _railFillEl = null, _railTrackEl = null;
-let _railActiveDot = null;
+let _railSectionMap = null;       // id → { dot, title, idx }
+let _railSectionOrder = [];
+let _railFillEl = null, _railTrackEl = null, _railEl = null, _railBubbleEl = null;
+let _railHideBubbleTimer = null;
+let _railCurrentIdx = -1;
 
 function buildProgressRail(sections){
-  const rail = $('#progressRail');
-  const track = $('#railTrack');
-  const fill = $('#railFill');
-  if(!rail || !track || !fill) return;
+  _railEl    = $('#progressRail');
+  _railTrackEl = $('#railTrack');
+  _railFillEl  = $('#railFill');
+  if(!_railEl || !_railTrackEl || !_railFillEl) return;
   if(!sections || sections.length === 0){
-    rail.style.display = 'none';
-    track.innerHTML = '';
-    fill.style.width = '0';
+    _railEl.style.display = 'none';
+    _railTrackEl.innerHTML = '';
+    _railFillEl.style.width = '0';
+    if(_railBubbleEl) _railBubbleEl.classList.remove('show');
     return;
   }
-  rail.style.display = 'block';
-  _railFillEl = fill; _railTrackEl = track;
+  _railEl.style.display = 'block';
+
   _railSectionMap = {};
   _railSectionOrder = sections.map(s => s.id);
-  track.innerHTML = sections.map((s,i) => `
-    <div class="rail-dot" data-anchor="${s.id}" data-idx="${i}" title="${s.title}">
-      <div class="rail-tooltip"><span>${s.title}</span><button type="button" class="rail-tooltip-jump" data-jump="${s.id}">קפיצה</button></div>
-    </div>
-  `).join('');
+
+  _railTrackEl.innerHTML = sections.map((s,i) =>
+    `<div class="rail-dot" data-anchor="${s.id}" data-idx="${i}" data-title="${s.title.replace(/"/g, '&quot;')}"></div>`
+  ).join('');
+
+  // One shared bubble appended after the track
+  let bubble = $('#railBubble');
+  if(!bubble){
+    bubble = document.createElement('div');
+    bubble.id = 'railBubble';
+    bubble.className = 'rail-bubble';
+    _railEl.appendChild(bubble);
+  }
+  _railBubbleEl = bubble;
+  bubble.classList.remove('show');
+
   $$('#railTrack .rail-dot').forEach(dot => {
-    _railSectionMap[dot.dataset.anchor] = dot;
-    dot.addEventListener('click', (e) => onRailDotClick(dot, e));
+    _railSectionMap[dot.dataset.anchor] = { dot, title: dot.dataset.title, idx: parseInt(dot.dataset.idx) };
+    dot.addEventListener('click', (e) => { e.stopPropagation(); showRailBubble(dot); });
   });
-  // observe section visibility for auto-progress
+  // Tap on track itself (not on a dot) → hide bubble
+  _railTrackEl.addEventListener('click', () => hideRailBubble());
+
+  // Auto-progress observer
   if(_railObserver) _railObserver.disconnect();
   _railObserver = new IntersectionObserver(onRailIntersect, {
     rootMargin: '-30% 0px -55% 0px',
@@ -362,51 +378,87 @@ function buildProgressRail(sections){
     const el = document.getElementById(s.id);
     if(el) _railObserver.observe(el);
   }
+  _railCurrentIdx = -1;
 }
 
 function onRailIntersect(entries){
   for(const ent of entries){
+    if(!ent.isIntersecting) continue;
     const id = ent.target.id;
-    if(!_railSectionMap || !_railSectionMap[id]) continue;
-    if(ent.isIntersecting){
-      // Mark this section + all earlier as done; mark THIS as active
-      let activeIdx = -1;
-      _railSectionOrder.forEach((sid, i) => {
-        const dot = _railSectionMap[sid];
-        if(!dot) return;
-        if(sid === id){ activeIdx = i; }
-      });
-      if(activeIdx < 0) continue;
-      _railSectionOrder.forEach((sid, i) => {
-        const dot = _railSectionMap[sid];
-        dot.classList.toggle('is-done', i < activeIdx);
-        dot.classList.toggle('is-active', i === activeIdx);
-      });
-      // Compute fill width based on dot offset
-      const dot = _railSectionMap[id];
-      const trackRect = _railTrackEl.getBoundingClientRect();
-      const dotRect = dot.getBoundingClientRect();
-      // For RTL track, fill from right to dot's right-edge → use width from right
-      const widthPx = (trackRect.right - dotRect.left);
-      _railFillEl.style.width = Math.max(0, widthPx) + 'px';
-      _railFillEl.style.right = '0';
-    }
+    const info = _railSectionMap?.[id]; if(!info) continue;
+    setRailCurrent(info.idx);
   }
 }
 
-function onRailDotClick(dot, e){
-  if(e && (e.target.closest('.rail-tooltip-jump'))){
-    // Jump to anchor
-    const anchor = e.target.dataset.jump;
+function setRailCurrent(idx){
+  if(idx === _railCurrentIdx) return;
+  _railCurrentIdx = idx;
+  $$('#railTrack .rail-dot').forEach((dot, i) => {
+    dot.classList.toggle('is-done',    i < idx);
+    dot.classList.toggle('is-current', i === idx);
+  });
+  // Fill from right (start) up to the current dot.
+  // The track flexes left-right with space-between; dots are at left:offset-x from container.
+  if(idx < 0){ _railFillEl.style.width = '0'; return; }
+  const trackRect = _railTrackEl.getBoundingClientRect();
+  const dot = _railTrackEl.querySelector(`.rail-dot[data-idx="${idx}"]`);
+  if(!dot) return;
+  const dotRect = dot.getBoundingClientRect();
+  // RTL: "start" is the right edge → fill from right to dot's center
+  const widthPx = (trackRect.right - (dotRect.left + dotRect.width/2));
+  _railFillEl.style.width = Math.max(0, Math.min(trackRect.width, widthPx)) + 'px';
+}
+
+function showRailBubble(dot){
+  if(!_railBubbleEl || !dot || !_railTrackEl) return;
+  const trackRect = _railTrackEl.getBoundingClientRect();
+  const railRect  = _railEl.getBoundingClientRect();
+  const dotRect = dot.getBoundingClientRect();
+  // Position bubble centered above the dot, but clamped inside the rail's width
+  // bubble uses transform:translateX(50%) so .right = distance from dot's right edge to rail's right
+  const dotCenterFromRailRight = railRect.right - (dotRect.left + dotRect.width/2);
+  // Render bubble first so we can measure it
+  _railBubbleEl.innerHTML = `
+    <span>${dot.dataset.title}</span>
+    <button type="button" class="rail-bubble-jump" data-jump="${dot.dataset.anchor}">קפיצה</button>
+  `;
+  _railBubbleEl.classList.add('show');
+  // Measure
+  const bubbleW = _railBubbleEl.offsetWidth;
+  const railW   = railRect.width;
+  // Compute desired right offset relative to rail
+  let right = dotCenterFromRailRight - bubbleW/2;
+  right = Math.max(8, Math.min(railW - bubbleW - 8, right));
+  _railBubbleEl.style.right = right + 'px';
+  _railBubbleEl.style.left = 'auto';
+  _railBubbleEl.style.transform = 'none';
+  // Reposition arrow to point at the dot
+  let arrowOffset = (dotCenterFromRailRight - right);
+  arrowOffset = Math.max(10, Math.min(bubbleW - 10, arrowOffset));
+  _railBubbleEl.style.setProperty('--arrow-from-right', arrowOffset + 'px');
+  // Wire jump button
+  _railBubbleEl.querySelector('.rail-bubble-jump').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const anchor = e.currentTarget.dataset.jump;
     const el = document.getElementById(anchor);
     if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
-    dot.classList.remove('is-active');
-    return;
-  }
-  // First click → just expand this dot (deactivate others)
-  $$('#railTrack .rail-dot.is-active').forEach(d => { if(d !== dot) d.classList.remove('is-active'); });
-  dot.classList.toggle('is-active');
+    hideRailBubble();
+  });
+  // Auto-hide after a few seconds
+  clearTimeout(_railHideBubbleTimer);
+  _railHideBubbleTimer = setTimeout(hideRailBubble, 2400);
 }
+
+function hideRailBubble(){
+  if(_railBubbleEl) _railBubbleEl.classList.remove('show');
+  clearTimeout(_railHideBubbleTimer);
+}
+
+// Close bubble when clicking anywhere else
+document.addEventListener('click', (e) => {
+  if(!_railBubbleEl || !_railEl) return;
+  if(!_railEl.contains(e.target)) hideRailBubble();
+}, true);
 
 /* ─── Parsha index ─── */
 function renderParshaIndex(){
@@ -928,28 +980,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.setAttribute('data-theme','dark');
   }
 
-  // Reading controls — panel hidden by default, toggled only by the icon
+  // Reading controls live in Settings only — apply current prefs on load.
   applyPrefs();
-  $('#readingPanel').hidden = true;
-  $('#readingToggle')?.addEventListener('click', toggleReadingPanel);
-  $$('.rc-btn[data-size]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.size); }));
-  $$('.rc-btn[data-align]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); adjustReadingPref(b.dataset.align); }));
 
-  // Hide reading controls during scroll; show again when scrolling stops
-  let _scrollHideTimer = null;
-  let _lastScrollY = window.scrollY;
-  document.addEventListener('scroll', () => {
-    const ctrl = $('#readingControls'); if(!ctrl) return;
-    const panel = $('#readingPanel');
-    const dy = Math.abs(window.scrollY - _lastScrollY);
-    _lastScrollY = window.scrollY;
-    if(dy > 2){
-      ctrl.classList.add('hidden');
-      if(panel && !panel.hidden) panel.hidden = true;
-    }
-    clearTimeout(_scrollHideTimer);
-    _scrollHideTimer = setTimeout(() => ctrl.classList.remove('hidden'), 600);
-  }, {passive:true});
   document.addEventListener('scroll', () => {
     document.querySelector('.app-header')?.classList.toggle('scrolled', window.scrollY > 4);
   }, {passive:true});
