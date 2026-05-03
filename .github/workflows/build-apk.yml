@@ -3,10 +3,10 @@ name: Build Android APK
 on:
   push:
     branches: [main]
-  workflow_dispatch:    # Allow manual trigger from the Actions tab
+  workflow_dispatch:
 
 permissions:
-  contents: write       # to upload the APK as a release asset
+  contents: write
 
 jobs:
   build-apk:
@@ -26,124 +26,120 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools cmdline-tools;latest'
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
 
-      - name: Verify SDK layout (Bubblewrap-compatible)
+      - name: Install Bubblewrap core
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -la "$ANDROID_HOME"
-          ls -la "$ANDROID_HOME/cmdline-tools" || true
-          ls -la "$ANDROID_HOME/platform-tools" || true
-          ls -la "$ANDROID_HOME/build-tools" || true
-          # Bubblewrap checks for cmdline-tools/<version>/bin/sdkmanager. setup-android
-          # installs to cmdline-tools/16.0/. Symlink "latest" if missing.
-          if [ ! -d "$ANDROID_HOME/cmdline-tools/latest" ]; then
-            VER=$(ls "$ANDROID_HOME/cmdline-tools" | grep -v latest | head -1)
-            echo "Symlinking cmdline-tools/$VER -> latest"
-            ln -sf "$ANDROID_HOME/cmdline-tools/$VER" "$ANDROID_HOME/cmdline-tools/latest"
-          fi
+          mkdir -p twa-build
+          cd twa-build
+          npm init -y > /dev/null
+          npm install @bubblewrap/core --silent
 
-      - name: Pre-configure Bubblewrap (skip interactive prompts)
-        run: |
-          mkdir -p ~/.bubblewrap
-          cat > ~/.bubblewrap/config.json <<EOF
-          {
-            "jdkPath": "$JAVA_HOME",
-            "androidSdkPath": "$ANDROID_HOME"
-          }
-          EOF
-          echo "Config:"; cat ~/.bubblewrap/config.json
-
-      - name: Generate signing keystore (deterministic)
+      - name: Generate signing keystore
         run: |
           mkdir -p ~/.android
           if [ ! -f ~/.android/sidur.keystore ]; then
-            keytool -genkeypair -v \
+            "$JAVA_HOME/bin/keytool" -genkeypair -v \
               -keystore ~/.android/sidur.keystore \
               -alias sidur \
-              -storepass ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }} \
-              -keypass ${{ secrets.KEY_PASSWORD || 'sidur-app' }} \
+              -storepass sidur-app \
+              -keypass sidur-app \
               -keyalg RSA -keysize 2048 -validity 25000 \
               -dname "CN=Sidur App, OU=Personal, O=tuvyanoam, L=Jerusalem, ST=Israel, C=IL"
           fi
+          ls -la ~/.android
 
-      - name: Write twa-manifest
+      - name: Generate TWA project (programmatic, non-interactive)
         run: |
-          mkdir -p twa-build
-          cat > twa-build/twa-manifest.json <<'EOF'
-          {
-            "packageId": "com.tuvyanoam.sidur",
-            "host": "tuvyanoam-code.github.io",
-            "name": "סידור תהילת ה'",
-            "launcherName": "סידור",
-            "display": "standalone",
-            "orientation": "portrait",
-            "themeColor": "#0f4c2e",
-            "navigationColor": "#0f4c2e",
-            "navigationColorDark": "#0f4c2e",
-            "navigationDividerColor": "#0f4c2e",
-            "navigationDividerColorDark": "#0f4c2e",
-            "backgroundColor": "#f5f3ec",
-            "enableNotifications": false,
-            "startUrl": "/SidurApp/",
-            "iconUrl": "https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png",
-            "maskableIconUrl": "https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png",
-            "appVersionName": "1.0.0",
-            "appVersion": "1.0.0",
-            "appVersionCode": 1,
-            "shortcuts": [],
-            "generatorApp": "bubblewrap-cli",
-            "webManifestUrl": "https://tuvyanoam-code.github.io/SidurApp/manifest.json",
-            "fallbackType": "customtabs",
-            "features": {},
-            "alphaDependencies": { "enabled": false },
-            "enableSiteSettingsShortcut": true,
-            "isChromeOSOnly": false,
-            "isMetaQuest": false,
-            "fullScopeUrl": "https://tuvyanoam-code.github.io/SidurApp/",
-            "minSdkVersion": 21,
-            "signingKey": {
-              "path": "/home/runner/.android/sidur.keystore",
-              "alias": "sidur"
-            }
-          }
+          cd twa-build
+          cat > generate.js <<'EOF'
+          const { TwaGenerator, TwaManifest } = require('@bubblewrap/core');
+          const path = require('path');
+          const os = require('os');
+
+          (async () => {
+            const url = 'https://tuvyanoam-code.github.io/SidurApp/manifest.json';
+            // Fetch the web manifest and build a TwaManifest from it
+            const res = await fetch(url);
+            const webManifest = await res.json();
+            const tm = TwaManifest.fromWebManifestJson(new URL(url), webManifest);
+            // Override values that the Web Manifest doesn't carry:
+            tm.packageId = 'com.tuvyanoam.sidur';
+            tm.host = 'tuvyanoam-code.github.io';
+            tm.startUrl = '/SidurApp/';
+            tm.name = "סידור תהילת ה'";
+            tm.launcherName = 'סידור';
+            tm.iconUrl = 'https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png';
+            tm.maskableIconUrl = 'https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png';
+            tm.appVersionName = '1.0.0';
+            tm.appVersionCode = 1;
+            tm.themeColor = '#0f4c2e';
+            tm.navigationColor = '#0f4c2e';
+            tm.backgroundColor = '#f5f3ec';
+            tm.fallbackType = 'customtabs';
+            tm.minSdkVersion = 21;
+            tm.signingKey = { path: path.join(os.homedir(), '.android', 'sidur.keystore'), alias: 'sidur' };
+
+            // Save the manifest file (some bubblewrap commands expect it on disk)
+            await tm.saveToFile('twa-manifest.json');
+
+            const gen = new TwaGenerator();
+            const log = { debug: ()=>{}, info: console.log, warn: console.warn, error: console.error, newLog: () => log };
+            await gen.createTwaProject('.', tm, log);
+            console.log('TWA project generated.');
+          })().catch(e => { console.error(e); process.exit(1); });
           EOF
-          echo "twa-manifest.json written"
+          node generate.js
+          ls -la
 
-      - name: Bubblewrap update (generate Android project from manifest)
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'sidur-app' }}
+      - name: Build & sign APK with Gradle
         run: |
           cd twa-build
-          npx --yes @bubblewrap/cli update --skipVersionUpgrade --appVersion=1
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease bundleRelease
+          echo "--- APK locations ---"
+          find . -name "*.apk" -o -name "*.aab" | head -20
 
-      - name: Build APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'sidur-app' }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'sidur-app' }}
+      - name: Sign APK (apksigner)
         run: |
           cd twa-build
-          npx --yes @bubblewrap/cli build \
-            --skipPwaValidation
+          UNSIGNED=$(find app/build/outputs/apk/release -name "*release-unsigned.apk" | head -1 || true)
+          SIGNED=$(find app/build/outputs/apk/release -name "*release.apk" | grep -v unsigned | head -1 || true)
+          OUT=app-release-signed.apk
+          if [ -n "$SIGNED" ] && [ -f "$SIGNED" ]; then
+            cp "$SIGNED" "$OUT"
+            echo "Already signed: $OUT"
+          elif [ -n "$UNSIGNED" ] && [ -f "$UNSIGNED" ]; then
+            APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+            "$APKSIGNER" sign \
+              --ks ~/.android/sidur.keystore \
+              --ks-key-alias sidur \
+              --ks-pass pass:sidur-app \
+              --key-pass pass:sidur-app \
+              --out "$OUT" "$UNSIGNED"
+            echo "Signed: $OUT"
+          else
+            echo "No APK found"; ls -la app/build/outputs/apk/release/ || true; exit 1
+          fi
+          ls -la "$OUT"
+          # Bundle (AAB) for Play Store
+          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1 || true)
+          if [ -n "$AAB" ] && [ -f "$AAB" ]; then cp "$AAB" app-release.aab; fi
 
-      - name: Upload APK artifact
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: sidur-app-apk
           path: |
             twa-build/app-release-signed.apk
-            twa-build/app-release-bundle.aab
+            twa-build/app-release.aab
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Create / update GitHub release
+      - name: Publish to GitHub Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -151,10 +147,11 @@ jobs:
           name: Latest build
           body: |
             APK build from commit ${{ github.sha }}.
-            Install on Android: download `app-release-signed.apk`, open it on the phone, allow "install from unknown source" if prompted.
+            Install on Android: download `app-release-signed.apk`, open it on the phone,
+            allow "install from unknown sources" if prompted.
           files: |
             twa-build/app-release-signed.apk
-            twa-build/app-release-bundle.aab
+            twa-build/app-release.aab
           prerelease: false
           make_latest: true
         env:
