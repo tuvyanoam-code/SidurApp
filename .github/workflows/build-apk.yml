@@ -32,7 +32,22 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-34 build-tools;34.0.0'
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools cmdline-tools;latest'
+
+      - name: Verify SDK layout (Bubblewrap-compatible)
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/cmdline-tools" || true
+          ls -la "$ANDROID_HOME/platform-tools" || true
+          ls -la "$ANDROID_HOME/build-tools" || true
+          # Bubblewrap checks for cmdline-tools/<version>/bin/sdkmanager. setup-android
+          # installs to cmdline-tools/16.0/. Symlink "latest" if missing.
+          if [ ! -d "$ANDROID_HOME/cmdline-tools/latest" ]; then
+            VER=$(ls "$ANDROID_HOME/cmdline-tools" | grep -v latest | head -1)
+            echo "Symlinking cmdline-tools/$VER -> latest"
+            ln -sf "$ANDROID_HOME/cmdline-tools/$VER" "$ANDROID_HOME/cmdline-tools/latest"
+          fi
 
       - name: Pre-configure Bubblewrap (skip interactive prompts)
         run: |
