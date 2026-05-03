@@ -89,6 +89,10 @@ jobs:
             "isMetaQuest": false,
             "fullScopeUrl": "https://tuvyanoam-code.github.io/SidurApp/",
             "minSdkVersion": 21,
+            "splashScreenFadeOutDuration": 300,
+            "additionalTrustedOrigins": [],
+            "retainedBundleSizeMb": 50,
+            "isMetaQuestEnabled": false,
             "signingKey": { "path": "/home/runner/.android/sidur.keystore", "alias": "sidur" }
           }
           JSON
