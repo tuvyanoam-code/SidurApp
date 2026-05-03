@@ -36,7 +36,7 @@ jobs:
           mkdir -p twa-build
           cd twa-build
           npm init -y > /dev/null
-          npm install @bubblewrap/core --silent
+          npm install @bubblewrap/core color --silent
 
       - name: Generate signing keystore
         run: |
@@ -57,16 +57,15 @@ jobs:
           cd twa-build
           cat > generate.js <<'EOF'
           const { TwaGenerator, TwaManifest } = require('@bubblewrap/core');
+          const Color = require('color');
           const path = require('path');
           const os = require('os');
 
           (async () => {
             const url = 'https://tuvyanoam-code.github.io/SidurApp/manifest.json';
-            // Fetch the web manifest and build a TwaManifest from it
             const res = await fetch(url);
             const webManifest = await res.json();
             const tm = TwaManifest.fromWebManifestJson(new URL(url), webManifest);
-            // Override values that the Web Manifest doesn't carry:
             tm.packageId = 'com.tuvyanoam.sidur';
             tm.host = 'tuvyanoam-code.github.io';
             tm.startUrl = '/SidurApp/';
@@ -76,14 +75,17 @@ jobs:
             tm.maskableIconUrl = 'https://tuvyanoam-code.github.io/SidurApp/icons/icon-512.png';
             tm.appVersionName = '1.0.0';
             tm.appVersionCode = 1;
-            tm.themeColor = '#0f4c2e';
-            tm.navigationColor = '#0f4c2e';
-            tm.backgroundColor = '#f5f3ec';
+            tm.themeColor = new Color('#0f4c2e');
+            tm.themeColorDark = new Color('#0f4c2e');
+            tm.navigationColor = new Color('#0f4c2e');
+            tm.navigationColorDark = new Color('#0f4c2e');
+            tm.navigationDividerColor = new Color('#0f4c2e');
+            tm.navigationDividerColorDark = new Color('#0f4c2e');
+            tm.backgroundColor = new Color('#f5f3ec');
             tm.fallbackType = 'customtabs';
             tm.minSdkVersion = 21;
             tm.signingKey = { path: path.join(os.homedir(), '.android', 'sidur.keystore'), alias: 'sidur' };
 
-            // Save the manifest file (some bubblewrap commands expect it on disk)
             await tm.saveToFile('twa-manifest.json');
 
             const gen = new TwaGenerator();
