@@ -138,8 +138,15 @@ jobs:
               }
           }
           dependencies {
-              implementation 'androidx.appcompat:appcompat:1.7.0'
               implementation 'androidx.webkit:webkit:1.11.0'
+          }
+          // Force a single Kotlin stdlib so AppCompat/Webkit don't fight
+          configurations.all {
+              resolutionStrategy {
+                  force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
+                  force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.24'
+                  force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.24'
+              }
           }
           EOF
 
@@ -161,7 +168,7 @@ jobs:
                       android:exported="true"
                       android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
                       android:windowSoftInputMode="adjustResize"
-                      android:theme="@style/AppTheme.NoActionBar">
+                      android:theme="@style/AppTheme">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -175,14 +182,14 @@ jobs:
           package com.tuvyanoam.sidur;
 
           import android.annotation.SuppressLint;
+          import android.app.Activity;
           import android.os.Bundle;
           import android.view.View;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          import androidx.appcompat.app.AppCompatActivity;
 
-          public class MainActivity extends AppCompatActivity {
+          public class MainActivity extends Activity {
               private WebView webView;
 
               @SuppressLint("SetJavaScriptEnabled")
@@ -250,15 +257,9 @@ jobs:
           cat > app/src/main/res/values/themes.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <style name="AppTheme" parent="Theme.AppCompat.DayNight">
-                  <item name="colorPrimary">@color/brand</item>
-                  <item name="colorPrimaryDark">@color/brand_dark</item>
-                  <item name="android:statusBarColor">@color/brand</item>
-                  <item name="android:windowBackground">@color/paper</item>
-              </style>
-              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-                  <item name="colorPrimary">@color/brand</item>
-                  <item name="colorPrimaryDark">@color/brand_dark</item>
+              <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:colorPrimary">@color/brand</item>
+                  <item name="android:colorPrimaryDark">@color/brand_dark</item>
                   <item name="android:statusBarColor">@color/brand</item>
                   <item name="android:windowBackground">@color/paper</item>
               </style>
