@@ -3,3 +3,4 @@ node_modules/
 *.log
 sefaria_data.json
 sidur_data.json
+tehillim.json

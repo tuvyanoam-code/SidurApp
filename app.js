@@ -281,6 +281,7 @@ function renderNowCard(suggestion){
 function openPrayer(id){
   const p = PRAYERS_BY_ID[id]; if(!p) return;
   $('#screen-home').classList.remove('active');
+  $('#screen-settings')?.classList.remove('active');
   $('#screen-prayer').classList.add('active');
   $('#prayerTopTitle').textContent = p.title;
 
@@ -288,6 +289,11 @@ function openPrayer(id){
 
   if(p.kind === 'parsha'){
     renderParshaIndex();
+    buildProgressRail([]);
+    return;
+  }
+  if(p.kind === 'tehillim-daily'){
+    renderTehillimDaily();
     return;
   }
 
@@ -303,13 +309,103 @@ function openPrayer(id){
       if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
     })
   );
+  buildProgressRail(visibleSections);
   window.scrollTo({top:0});
 }
 
 function backHome(){
   $('#screen-prayer').classList.remove('active');
+  $('#screen-settings')?.classList.remove('active');
   $('#screen-home').classList.add('active');
   closeSheet();
+  if(_railObserver){ _railObserver.disconnect(); _railObserver = null; }
+}
+
+/* ─── Progress rail ─── */
+let _railObserver = null;
+let _railSectionMap = null;          // sectionId → dot element
+let _railSectionOrder = [];          // [sectionId, ...] in document order
+let _railFillEl = null, _railTrackEl = null;
+let _railActiveDot = null;
+
+function buildProgressRail(sections){
+  const rail = $('#progressRail');
+  const track = $('#railTrack');
+  const fill = $('#railFill');
+  if(!rail || !track || !fill) return;
+  if(!sections || sections.length === 0){
+    rail.style.display = 'none';
+    track.innerHTML = '';
+    fill.style.width = '0';
+    return;
+  }
+  rail.style.display = 'block';
+  _railFillEl = fill; _railTrackEl = track;
+  _railSectionMap = {};
+  _railSectionOrder = sections.map(s => s.id);
+  track.innerHTML = sections.map((s,i) => `
+    <div class="rail-dot" data-anchor="${s.id}" data-idx="${i}" title="${s.title}">
+      <div class="rail-tooltip"><span>${s.title}</span><button type="button" class="rail-tooltip-jump" data-jump="${s.id}">קפיצה</button></div>
+    </div>
+  `).join('');
+  $$('#railTrack .rail-dot').forEach(dot => {
+    _railSectionMap[dot.dataset.anchor] = dot;
+    dot.addEventListener('click', (e) => onRailDotClick(dot, e));
+  });
+  // observe section visibility for auto-progress
+  if(_railObserver) _railObserver.disconnect();
+  _railObserver = new IntersectionObserver(onRailIntersect, {
+    rootMargin: '-30% 0px -55% 0px',
+    threshold: 0,
+  });
+  for(const s of sections){
+    const el = document.getElementById(s.id);
+    if(el) _railObserver.observe(el);
+  }
+}
+
+function onRailIntersect(entries){
+  for(const ent of entries){
+    const id = ent.target.id;
+    if(!_railSectionMap || !_railSectionMap[id]) continue;
+    if(ent.isIntersecting){
+      // Mark this section + all earlier as done; mark THIS as active
+      let activeIdx = -1;
+      _railSectionOrder.forEach((sid, i) => {
+        const dot = _railSectionMap[sid];
+        if(!dot) return;
+        if(sid === id){ activeIdx = i; }
+      });
+      if(activeIdx < 0) continue;
+      _railSectionOrder.forEach((sid, i) => {
+        const dot = _railSectionMap[sid];
+        dot.classList.toggle('is-done', i < activeIdx);
+        dot.classList.toggle('is-active', i === activeIdx);
+      });
+      // Compute fill width based on dot offset
+      const dot = _railSectionMap[id];
+      const trackRect = _railTrackEl.getBoundingClientRect();
+      const dotRect = dot.getBoundingClientRect();
+      // For RTL track, fill from right to dot's right-edge → use width from right
+      const widthPx = (trackRect.right - dotRect.left);
+      _railFillEl.style.width = Math.max(0, widthPx) + 'px';
+      _railFillEl.style.right = '0';
+    }
+  }
+}
+
+function onRailDotClick(dot, e){
+  if(e && (e.target.closest('.rail-tooltip-jump'))){
+    // Jump to anchor
+    const anchor = e.target.dataset.jump;
+    const el = document.getElementById(anchor);
+    if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    dot.classList.remove('is-active');
+    return;
+  }
+  // First click → just expand this dot (deactivate others)
+  $$('#railTrack .rail-dot.is-active').forEach(d => { if(d !== dot) d.classList.remove('is-active'); });
+  dot.classList.toggle('is-active');
 }
 
 /* ─── Parsha index ─── */
@@ -377,6 +473,247 @@ async function loadParsha(ref, heName){
   } catch(err){
     target.innerHTML = `<h3>${heName}</h3><p class="rubric">לא ניתן לטעון את הטקסט. נסה שוב מאוחר יותר.</p>`;
   }
+}
+
+/* ─── Tehillim ─── */
+function loadPersonalTehillim(){
+  try{ return JSON.parse(localStorage.getItem('sidur-personal-tehillim') || '[]'); }
+  catch{ return []; }
+}
+function savePersonalTehillim(list){
+  localStorage.setItem('sidur-personal-tehillim', JSON.stringify(list));
+}
+function loadPersonalPos(){
+  return localStorage.getItem('sidur-personal-pos') || 'before';
+}
+function savePersonalPos(pos){ localStorage.setItem('sidur-personal-pos', pos); }
+
+function todayHebrewDayOfMonth(){
+  // Use STATE.todayHE.hd if present (Hebcal converter); else fall back to Gregorian day
+  return STATE.todayHE?.hd || new Date().getDate();
+}
+function tehillimRangesForDay(dayOfMonth){
+  const d = String(Math.min(30, Math.max(1, dayOfMonth)));
+  const ranges = TEHILLIM_DAILY[d] || [];
+  // Special: if month has 29 days, day 29 = day 29 + day 30
+  // We can't reliably know without month-info; render as-is for now.
+  return ranges;
+}
+function renderTehillimChapter(ch, opts){
+  opts = opts || {};
+  const verses = (TEHILLIM_CHAPTERS && TEHILLIM_CHAPTERS[ch]) || [];
+  if(!verses.length){
+    return `<div class="tehillim-chapter"><h2 class="tehillim-chapter-h" id="tehillim-${ch}">פרק ${toGematria(ch)}</h2><p class="rubric">— הטקסט עוד לא נטען —</p></div>`;
+  }
+  const personalMark = opts.personal ? `<span class="tehillim-personal-mark">אישי</span>` : '';
+  let html = `<div class="tehillim-chapter"><h2 class="tehillim-chapter-h" id="tehillim-${ch}">פרק ${toGematria(ch)}${personalMark}</h2>`;
+  let from = opts.from || 1, to = opts.to || verses.length;
+  for(let i = from-1; i < to && i < verses.length; i++){
+    html += `<span class="tehillim-verse"><span class="tehillim-verse-num">${toGematria(i+1)}</span>${verses[i]}</span>`;
+  }
+  html += `</div>`;
+  return html;
+}
+function rangeKey(r){
+  if(typeof r === 'number') return `c${r}`;
+  return `c${r.ch}-${r.from || 1}-${r.to || ''}`;
+}
+function renderTehillimDaily(){
+  const dom = todayHebrewDayOfMonth();
+  const dailyRanges = tehillimRangesForDay(dom).slice();
+  const personal = loadPersonalTehillim();
+  const pos = loadPersonalPos();
+
+  const personalRanges = personal.map(c => ({ ch: c, from: 1, to: TEHILLIM_CHAPTERS[c]?.length || 1, _personal: true }));
+
+  const top = `<h2 id="tehillim-top">תהילים יומי</h2>
+    <p class="rubric"><span class="tehillim-day-pill">יום ${toGematria(dom)} בחודש</span></p>`;
+
+  let html = top;
+  const addBlocks = (ranges, label) => {
+    if(!ranges.length) return;
+    if(label) html += `<div class="tehillim-block-h">${label}</div>`;
+    for(const r of ranges){
+      if(typeof r === 'number') html += renderTehillimChapter(r, { personal: !!r._personal });
+      else html += renderTehillimChapter(r.ch, { from:r.from, to:r.to, personal: !!r._personal });
+    }
+  };
+
+  // Build sections-list for TOC + progress rail
+  const tocSections = [];
+  const dailyToc = (rs) => rs.map(r => {
+    const ch = (typeof r === 'number') ? r : r.ch;
+    const id = `tehillim-${ch}`;
+    return { id, title: `פרק ${toGematria(ch)}` + (r.from > 1 || (r.to && r.to < (TEHILLIM_CHAPTERS[ch]?.length || 999)) ? ` (${toGematria(r.from||1)}–${toGematria(r.to||TEHILLIM_CHAPTERS[ch]?.length||1)})` : '') };
+  });
+
+  if(pos === 'before' && personal.length){
+    addBlocks(personalRanges, 'הפרקים האישיים שלי');
+    addBlocks(dailyRanges, 'תהילים יומי');
+    tocSections.push(...dailyToc(personalRanges));
+    tocSections.push(...dailyToc(dailyRanges));
+  } else if(pos === 'after' && personal.length){
+    addBlocks(dailyRanges, 'תהילים יומי');
+    addBlocks(personalRanges, 'הפרקים האישיים שלי');
+    tocSections.push(...dailyToc(dailyRanges));
+    tocSections.push(...dailyToc(personalRanges));
+  } else {
+    addBlocks(dailyRanges, '');
+    tocSections.push(...dailyToc(dailyRanges));
+  }
+
+  $('#prayerBody').innerHTML = html;
+  $('#tocList').innerHTML = tocSections.map((s,i) =>
+    `<li data-anchor="${s.id}"><span>${s.title}</span><span class="toc-num">${i+1}</span></li>`
+  ).join('');
+  $$('#tocList li').forEach(li => li.addEventListener('click', () => {
+    closeSheet();
+    document.getElementById(li.dataset.anchor)?.scrollIntoView({behavior:'smooth', block:'start'});
+  }));
+  buildProgressRail(tocSections);
+  window.scrollTo({top:0});
+}
+
+function toGematria(num){
+  // Hebrew number 1..400. For chapters 1..150 of Tehillim.
+  const map = [[400,'ת'],[300,'ש'],[200,'ר'],[100,'ק'],[90,'צ'],[80,'פ'],[70,'ע'],[60,'ס'],[50,'נ'],[40,'מ'],[30,'ל'],[20,'כ'],[10,'י'],[9,'ט'],[8,'ח'],[7,'ז'],[6,'ו'],[5,'ה'],[4,'ד'],[3,'ג'],[2,'ב'],[1,'א']];
+  let n = num, out = '';
+  for(const [v,l] of map){ while(n >= v){ out += l; n -= v; } }
+  out = out.replace(/יה$/,'ט"ו').replace(/יו$/,'ט"ז');
+  if(out.length >= 2 && !out.includes('"')) out = out.slice(0,-1) + '"' + out.slice(-1);
+  return out;
+}
+
+/* ─── Settings screen ─── */
+function openSettings(){
+  $('#screen-home').classList.remove('active');
+  $('#screen-prayer').classList.remove('active');
+  $('#screen-settings').classList.add('active');
+  renderPersonalList();
+  // Set radio state
+  const pos = loadPersonalPos();
+  $$('input[name="personalPos"]').forEach(i => i.checked = (i.value === pos));
+  // Set rc-btn states (settings copies)
+  applyPrefs();
+  window.scrollTo({top:0});
+}
+function backFromSettings(){
+  $('#screen-settings').classList.remove('active');
+  $('#screen-home').classList.add('active');
+}
+function renderPersonalList(){
+  const list = loadPersonalTehillim();
+  const ul = $('#personalList');
+  if(!ul) return;
+  if(list.length === 0){
+    ul.innerHTML = '<li style="color:var(--muted);font-size:13.5px;padding:12px 4px;text-align:center">אין פרקים אישיים. הוסיפו פרק כדי להתחיל.</li>';
+    return;
+  }
+  ul.innerHTML = list.map((ch, i) => `
+    <li class="personal-item" draggable="true" data-idx="${i}" data-ch="${ch}">
+      <span class="personal-handle" aria-hidden="true">⋮⋮</span>
+      <span class="personal-num">פרק ${toGematria(ch)}</span>
+      <button class="personal-remove" data-rm="${i}" aria-label="הסר פרק">✕</button>
+    </li>
+  `).join('');
+  // Wire remove
+  $$('.personal-remove').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = parseInt(btn.dataset.rm);
+    const list = loadPersonalTehillim();
+    list.splice(idx, 1);
+    savePersonalTehillim(list);
+    renderPersonalList();
+  }));
+  // Wire drag-and-drop reordering (mouse)
+  let dragSrc = null;
+  $$('.personal-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      dragSrc = item; item.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', item.dataset.idx);
+    });
+    item.addEventListener('dragend', () => { item.classList.remove('is-dragging'); $$('.personal-item').forEach(i => i.classList.remove('is-drag-target')); dragSrc = null; });
+    item.addEventListener('dragover', (e) => { e.preventDefault(); item.classList.add('is-drag-target'); });
+    item.addEventListener('dragleave', () => item.classList.remove('is-drag-target'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault(); item.classList.remove('is-drag-target');
+      if(!dragSrc || dragSrc === item) return;
+      const fromIdx = parseInt(dragSrc.dataset.idx);
+      const toIdx = parseInt(item.dataset.idx);
+      const list = loadPersonalTehillim();
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      savePersonalTehillim(list);
+      renderPersonalList();
+    });
+  });
+  // Touch reordering — long-press to start drag
+  setupTouchReorder();
+}
+
+function setupTouchReorder(){
+  const items = $$('.personal-item');
+  let dragging = null, startY = 0, currentY = 0, placeholder = null;
+  items.forEach(item => {
+    item.addEventListener('touchstart', (ev) => {
+      // Don't drag if user touched the remove button
+      if(ev.target.closest('.personal-remove')) return;
+      dragging = item;
+      startY = ev.touches[0].clientY;
+      currentY = startY;
+      item.classList.add('is-dragging');
+    }, {passive:true});
+    item.addEventListener('touchmove', (ev) => {
+      if(!dragging) return;
+      currentY = ev.touches[0].clientY;
+      ev.preventDefault();
+      // Find which sibling we're hovering over
+      const others = $$('.personal-item').filter(i => i !== dragging);
+      for(const other of others){
+        const r = other.getBoundingClientRect();
+        if(currentY >= r.top && currentY <= r.bottom){
+          other.classList.add('is-drag-target');
+          others.filter(o => o !== other).forEach(o => o.classList.remove('is-drag-target'));
+          return;
+        }
+      }
+    }, {passive:false});
+    item.addEventListener('touchend', () => {
+      if(!dragging) return;
+      const tgt = $$('.personal-item').find(i => i.classList.contains('is-drag-target'));
+      $$('.personal-item').forEach(i => i.classList.remove('is-drag-target', 'is-dragging'));
+      if(tgt && tgt !== dragging){
+        const fromIdx = parseInt(dragging.dataset.idx);
+        const toIdx = parseInt(tgt.dataset.idx);
+        const list = loadPersonalTehillim();
+        const [moved] = list.splice(fromIdx, 1);
+        list.splice(toIdx, 0, moved);
+        savePersonalTehillim(list);
+        renderPersonalList();
+      }
+      dragging = null;
+    });
+  });
+}
+
+function addPersonalChapter(){
+  const input = $('#addChapterInput');
+  const v = parseInt(input.value);
+  if(!v || v < 1 || v > 150){
+    input.style.borderColor = 'var(--danger)';
+    setTimeout(() => input.style.borderColor = '', 600);
+    return;
+  }
+  const list = loadPersonalTehillim();
+  if(list.includes(v)){
+    input.value = '';
+    return;
+  }
+  list.push(v);
+  savePersonalTehillim(list);
+  input.value = '';
+  renderPersonalList();
 }
 
 /* ─── Sheet ─── */
@@ -538,8 +875,29 @@ if('serviceWorker' in navigator){
   });
 }
 
+/* ─── Inject Daily-Tehillim entry as a top-level "prayer" ─── */
+function injectDailyTehillim(){
+  if(typeof PRAYERS === 'undefined' || PRAYERS.find(p => p.id === 'daily-tehillim')) return;
+  const tehillimEntry = {
+    id: 'daily-tehillim',
+    kind: 'tehillim-daily',
+    title: 'תהילים יומי',
+    meta: 'הפרקים של היום בחודש + פרקים אישיים',
+    iconChar: 'ת',
+    iconClass: 'cool',
+    sections: [],     // built dynamically per day
+    sectionHtml: {},
+    searchIndex: [],
+  };
+  // Place it right after "shacharit" (or at the start if no shacharit)
+  const idx = PRAYERS.findIndex(p => p.id === 'shacharit');
+  PRAYERS.splice(idx >= 0 ? idx + 1 : 0, 0, tehillimEntry);
+  PRAYERS_BY_ID[tehillimEntry.id] = tehillimEntry;
+}
+
 /* ─── Wire up ─── */
 document.addEventListener('DOMContentLoaded', async () => {
+  injectDailyTehillim();
   renderHomeMeta();
   renderPrayersList();
 
@@ -550,6 +908,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#searchClose')?.addEventListener('click', closeSearch);
   $('#searchInput')?.addEventListener('input', e => renderSearchResults(e.target.value));
   document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSearch(); });
+
+  /* Settings screen */
+  $('#settingsBtn')?.addEventListener('click', openSettings);
+  $('#settingsBackBtn')?.addEventListener('click', backFromSettings);
+  $('#addChapterBtn')?.addEventListener('click', addPersonalChapter);
+  $('#addChapterInput')?.addEventListener('keydown', (e) => { if(e.key === 'Enter') addPersonalChapter(); });
+  $$('input[name="personalPos"]').forEach(r => r.addEventListener('change', () => savePersonalPos(r.value)));
+  $$('.settings-rc[data-size]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.size)));
+  $$('.settings-rc[data-align]').forEach(b => b.addEventListener('click', () => adjustReadingPref(b.dataset.align)));
 
   $('#themeBtn')?.addEventListener('click', () => {
     const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? '' : 'dark';
